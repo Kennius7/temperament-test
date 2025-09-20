@@ -1,35 +1,30 @@
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client"
 
-import React, { useState } from 'react';
-import { Send, User, Briefcase, Calendar, CheckCircle } from 'lucide-react';
+/* eslint-disable react-hooks/exhaustive-deps */
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import React, { useState, useMemo } from 'react';
+import { Send, User, Briefcase, Calendar, CheckCircle, ChevronLeft, ChevronRight, Home } from 'lucide-react';
 
 const TemperamentTest = () => {
+  const [currentPage, setCurrentPage] = useState(0);
   const [formData, setFormData] = useState({
     name: '',
     jobTitle: '',
     date: new Date().toISOString().split('T')[0]
   });
   
-  // Changed to store numeric values (1-5) instead of boolean
-  const [answers, setAnswers] = useState({
-    choleric: Array(12).fill(0),
-    sanguine: Array(12).fill(0),
-    phlegmatic: Array(12).fill(0),
-    melancholic: Array(12).fill(0)
-  });
-
+  const [answers, setAnswers] = useState<{[key: string]: number}>({});
   const [showResults, setShowResults] = useState(false);
   const [whatsappNumber, setWhatsappNumber] = useState('');
 
   // Rating options with values
   const ratingOptions = [
-    { label: 'Sure', value: 5, color: 'text-green-700', bgColor: 'bg-green-100' },
+    { label: 'Sure!', value: 5, color: 'text-green-700', bgColor: 'bg-green-100' },
     { label: 'Maybe', value: 4, color: 'text-green-600', bgColor: 'bg-green-50' },
     { label: '50-50', value: 3, color: 'text-yellow-600', bgColor: 'bg-yellow-50' },
     { label: 'Maybe Not', value: 2, color: 'text-red-600', bgColor: 'bg-red-50' },
-    { label: 'Nope', value: 1, color: 'text-red-700', bgColor: 'bg-red-100' }
+    { label: 'Nope!', value: 1, color: 'text-red-700', bgColor: 'bg-red-100' }
   ];
 
   const temperaments = {
@@ -123,16 +118,51 @@ const TemperamentTest = () => {
     }
   };
 
+  // Create randomized questions with temperament mapping
+  const randomizedQuestions = useMemo(() => {
+    const allQuestions: Array<{
+      question: string;
+      temperament: string;
+      originalIndex: number;
+      id: string;
+    }> = [];
+
+    Object.entries(temperaments).forEach(([temperamentKey, temperament]) => {
+      temperament.questions.forEach((question, index) => {
+        allQuestions.push({
+          question,
+          temperament: temperamentKey,
+          originalIndex: index,
+          id: `${temperamentKey}_${index}`
+        });
+      });
+    });
+
+    // Shuffle the questions
+    const shuffled = [...allQuestions].sort(() => Math.random() - 0.5);
+    return shuffled;
+  }, []);
+
+  // Split questions into pages (6 questions per page)
+  const questionsPerPage = 6;
+  const questionPages = useMemo(() => {
+    const pages = [];
+    for (let i = 0; i < randomizedQuestions.length; i += questionsPerPage) {
+      pages.push(randomizedQuestions.slice(i, i + questionsPerPage));
+    }
+    return pages;
+  }, [randomizedQuestions]);
+
+  const totalPages = questionPages.length + 1; // +1 for the form page
+
   const handleInputChange = (field: any, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleAnswerChange = (temperament: any, questionIndex: any, value: any) => {
-    setAnswers((prev: any) => ({
+  const handleAnswerChange = (questionId: string, value: number) => {
+    setAnswers(prev => ({
       ...prev,
-      [temperament]: prev[temperament].map((answer: any, index: any) => 
-        index === questionIndex ? value : answer
-      )
+      [questionId]: value
     }));
   };
 
@@ -151,13 +181,15 @@ const TemperamentTest = () => {
       melancholic: 0
     };
 
+    // Calculate scores based on answers
+    randomizedQuestions.forEach((q) => {
+      const answer = answers[q.id] || 0;
+      scores[q.temperament as keyof typeof temperaments] += answer;
+    });
+
+    // Calculate percentages (max possible score is 12 questions × 5 points = 60)
     (Object.keys(temperaments) as Array<keyof typeof temperaments>).forEach((temperament) => {
-      // Sum all ratings for this temperament
-      const totalScore = answers[temperament].reduce((sum: number, rating: number) => sum + rating, 0);
-      scores[temperament] = totalScore;
-      
-      // Calculate percentage (max possible score is 12 questions × 5 points = 60)
-      percentages[temperament] = Math.round((totalScore / 60) * 100);
+      percentages[temperament] = Math.round((scores[temperament] / 60) * 100);
     });
     
     return { scores, percentages };
@@ -185,10 +217,6 @@ const TemperamentTest = () => {
     };
   };
 
-  const handleSubmit = () => {
-    setShowResults(true);
-  };
-
   const sendToWhatsApp = () => {
     const results = getResults();
     const message = `🧠 TEMPERAMENT TEST RESULTS
@@ -214,155 +242,269 @@ ${temperaments.melancholic.icon} Melancholic (Thinker): ${results.allPercentages
   };
 
   // Check if all questions are answered
-  const allQuestionsAnswered = Object.values(answers).every(temperamentAnswers => 
-    temperamentAnswers.every(answer => answer > 0)
-  );
+  const allQuestionsAnswered = randomizedQuestions.every(q => answers[q.id] > 0);
   
-  const isFormValid = formData.name && formData.jobTitle && whatsappNumber && allQuestionsAnswered;
+  const isFormValid = formData.name && formData.jobTitle && whatsappNumber;
+
+  const canProceedFromForm = isFormValid;
+  const canShowResults = allQuestionsAnswered && isFormValid;
+
+  const goToNextPage = () => {
+    if (currentPage < totalPages - 1) {
+      setCurrentPage(currentPage + 1);
+    } else if (canShowResults) {
+      setShowResults(true);
+    }
+  };
+
+  const goToPrevPage = () => {
+    if (currentPage > 0) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  const goToPage = (pageIndex: number) => {
+    setCurrentPage(pageIndex);
+  };
+
+  const getCurrentPageQuestions = () => {
+    if (currentPage === 0) return [];
+    return questionPages[currentPage - 1] || [];
+  };
+
+  const getPageProgress = () => {
+    if (currentPage === 0) return canProceedFromForm ? 100 : 0;
+    
+    const pageQuestions = getCurrentPageQuestions();
+    const answeredCount = pageQuestions.filter(q => answers[q.id] > 0).length;
+    return (answeredCount / pageQuestions.length) * 100;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 py-8 px-4">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-xl shadow-lg p-8 mb-8">
-          <h1 className="text-4xl font-bold text-center text-gray-800 mb-4">
-            TEMPERAMENT TEST
-          </h1>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
-            <h2 className="text-lg font-semibold text-blue-800 mb-3">Instructions</h2>
-            <ul className="text-blue-700 space-y-2">
-              <li>• Read each statement carefully.</li>
-              <li>• Rate how much each statement describes your natural self (not what you wish you were).</li>
-              <li>• Use the 5-point scale: <strong>Sure</strong> (definitely me) to <strong>Nope</strong> (definitely not me).</li>
-              <li>• Your highest percentage = your dominant temperament.</li>
-              <li>• Your second-highest percentage = your secondary temperament.</li>
-              <li>• Remember: most people are a blend of multiple temperaments!</li>
-            </ul>
-          </div>
-
-          {/* Rating Scale Legend */}
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
-            <h3 className="text-md font-semibold text-gray-800 mb-3">Rating Scale:</h3>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {ratingOptions.map((option) => (
-                <div key={option.value} className={`${option.bgColor} px-3 py-1 rounded-full border`}>
-                  <span className={`${option.color} font-medium text-sm`}>
-                    {option.label} ({option.value})
-                  </span>
+        {!showResults ? (
+          <>
+            {/* Header with Progress */}
+            <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h1 className="text-3xl font-bold text-gray-800">
+                  TEMPERAMENT TEST
+                </h1>
+                <div className="text-sm text-gray-600">
+                  Page {currentPage + 1} of {totalPages}
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
+              
+              {/* Progress Bar */}
+              <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
+                <div
+                  className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${((currentPage + 1) / totalPages) * 100}%` }}
+                ></div>
+              </div>
 
-          {/* Personal Information Form */}
-          <div className="grid md:grid-cols-3 gap-4 mb-6">
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Name"
-                value={formData.name}
-                onChange={(e) => handleInputChange('name', e.target.value)}
-                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg text-gray-700
-                focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
-              />
-            </div>
-            <div className="relative">
-              <Briefcase className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Job Title"
-                value={formData.jobTitle}
-                onChange={(e) => handleInputChange('jobTitle', e.target.value)}
-                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg text-gray-700
-                focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
-              />
-            </div>
-            <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="date"
-                placeholder="Today's date"
-                value={formData.date}
-                onChange={(e) => handleInputChange('date', e.target.value)}
-                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg text-gray-700
-                focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
-              />
-            </div>
-          </div>
+              {/* Page Progress */}
+              <div className="w-full bg-gray-200 rounded-full h-1 mb-6">
+                <div
+                  className="bg-green-500 h-1 rounded-full transition-all duration-300"
+                  style={{ width: `${getPageProgress()}%` }}
+                ></div>
+              </div>
 
-          {/* WhatsApp Number */}
-          <div className="mb-6">
-            <input
-              type="tel"
-              placeholder="WhatsApp Number (with country code, e.g., +1234567890)"
-              value={whatsappNumber}
-              onChange={(e) => setWhatsappNumber(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 
-              focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500 text-gray-700"
-            />
-          </div>
-        </div>
+              {/* Page Indicators */}
+              <div className="flex justify-center space-x-2 mb-4">
+                {Array.from({ length: totalPages }, (_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => goToPage(i)}
+                    className={`w-3 h-3 rounded-full transition-all ${
+                      i === currentPage
+                        ? 'bg-purple-600'
+                        : i < currentPage
+                        ? 'bg-green-500'
+                        : 'bg-gray-300'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
 
-        {/* Questions */}
-        {Object.entries(temperaments).map(([temperamentKey, temperament]) => (
-          <div key={temperamentKey} className={`bg-white rounded-xl shadow-lg p-6 mb-6 border-l-4 ${temperament.borderColor}`}>
-            <h2 className={`text-2xl font-bold mb-6 ${temperament.textColor} flex items-center`}>
-              <span className="text-2xl mr-3">{temperament.icon}</span>
-              {temperament.name}
-            </h2>
-            <div className="space-y-6">
-              {temperament.questions.map((question, index) => (
-                <div key={index} className="p-4 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-start space-x-4 mb-3">
-                    <span className="text-sm font-medium text-gray-500 mt-1 min-w-[24px]">
-                      {index + 1}.
-                    </span>
-                    <p className="text-gray-700 flex-1 font-medium">{question}</p>
+            {/* Content */}
+            <div className="bg-white rounded-xl shadow-lg p-8 min-h-[500px]">
+              {currentPage === 0 ? (
+                // Personal Information Page
+                <>
+                  <div className="text-center mb-8">
+                    <h2 className="text-2xl font-bold text-gray-800 mb-4">Personal Information</h2>
+                    <p className="text-gray-600">Please fill in your details to get started.</p>
                   </div>
-                  <div className="flex flex-wrap gap-2 ml-8">
-                    {ratingOptions.map((option) => (
-                      <label key={option.value} className="flex items-center cursor-pointer">
-                        <input
-                          type="radio"
-                          name={`${temperamentKey}_${index}`}
-                          value={option.value}
-                          checked={answers[temperamentKey as keyof typeof answers][index] === option.value}
-                          onChange={() => handleAnswerChange(temperamentKey, index, option.value)}
-                          className="mr-2 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className={`${option.color} font-medium text-sm px-2 py-1 rounded ${option.bgColor}`}>
-                          {option.label}
-                        </span>
-                      </label>
+
+                  <div className="max-w-2xl mx-auto space-y-6">
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                      <input
+                        type="text"
+                        placeholder="Full Name"
+                        value={formData.name}
+                        onChange={(e) => handleInputChange('name', e.target.value)}
+                        className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg text-gray-700
+                        focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
+                      />
+                    </div>
+                    
+                    <div className="relative">
+                      <Briefcase className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                      <input
+                        type="text"
+                        placeholder="Job Title / Position"
+                        value={formData.jobTitle}
+                        onChange={(e) => handleInputChange('jobTitle', e.target.value)}
+                        className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg text-gray-700
+                        focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
+                      />
+                    </div>
+                    
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                      <input
+                        type="date"
+                        value={formData.date}
+                        onChange={(e) => handleInputChange('date', e.target.value)}
+                        className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg text-gray-700
+                        focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <input
+                        type="tel"
+                        placeholder="WhatsApp Number (with country code, e.g., +1234567890)"
+                        value={whatsappNumber}
+                        onChange={(e) => setWhatsappNumber(e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 
+                        focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500 text-gray-700"
+                      />
+                    </div>
+
+                    {/* Instructions */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mt-8">
+                      <h3 className="text-lg font-semibold text-blue-800 mb-3">Test Instructions</h3>
+                      <ul className="text-blue-700 space-y-2 text-sm">
+                        <li>• You&apos;ll answer 48 questions about your natural personality</li>
+                        <li>• Questions are randomly mixed - don&apos;t look for patterns</li>
+                        <li>• Rate each statement honestly from &quot;Sure!&quot; to &quot;Nope!&quot;</li>
+                        <li>• Think about your natural self, not who you want to be</li>
+                        <li>• There are no right or wrong answers</li>
+                      </ul>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                // Question Pages
+                <>
+                  <div className="text-center mb-8">
+                    <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                      Questions {((currentPage - 1) * questionsPerPage) + 1} - {Math.min(currentPage * questionsPerPage, randomizedQuestions.length)}
+                    </h2>
+                    <p className="text-gray-600">Rate how much each statement describes your natural self</p>
+                  </div>
+
+                  {/* Rating Scale Legend */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      {ratingOptions.map((option) => (
+                        <div key={option.value} className={`${option.bgColor} px-3 py-1 rounded-full border`}>
+                          <span className={`${option.color} font-medium text-sm`}>
+                            {option.label} ({option.value})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Questions */}
+                  <div className="space-y-6">
+                    {getCurrentPageQuestions().map((q, index) => (
+                      <div key={q.id} className="p-4 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors">
+                        <div className="flex items-start space-x-4 mb-3">
+                          <span className="text-sm font-medium text-gray-500 mt-1 min-w-[24px]">
+                            {((currentPage - 1) * questionsPerPage) + index + 1}.
+                          </span>
+                          <p className="text-gray-700 flex-1 font-medium">{q.question}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2 ml-8">
+                          {ratingOptions.map((option) => (
+                            <label key={option.value} className="flex items-center cursor-pointer">
+                              <input
+                                type="radio"
+                                name={q.id}
+                                value={option.value}
+                                checked={answers[q.id] === option.value}
+                                onChange={() => handleAnswerChange(q.id, option.value)}
+                                className="mr-2 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className={`${option.color} font-medium text-sm px-2 py-1 rounded ${option.bgColor}`}>
+                                {option.label}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </div>
-              ))}
+                </>
+              )}
             </div>
-          </div>
-        ))}
 
-        {/* Submit Button */}
-        <div className="text-center mb-8">
-          <button
-            onClick={handleSubmit}
-            disabled={!isFormValid}
-            className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-8 py-4 rounded-lg font-semibold text-lg hover:from-purple-700 hover:to-blue-700 transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none shadow-lg"
-          >
-            <CheckCircle className="inline-block w-5 h-5 mr-2" />
-            Calculate Results
-          </button>
-          {!allQuestionsAnswered && (
-            <p className="text-red-600 text-sm mt-2">Please answer all questions before calculating results.</p>
-          )}
-        </div>
+            {/* Navigation */}
+            <div className="flex justify-between items-center mt-6">
+              <button
+                onClick={goToPrevPage}
+                disabled={currentPage === 0}
+                className="flex items-center px-6 py-3 bg-gray-500 text-white rounded-lg font-semibold
+                hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                <ChevronLeft className="w-5 h-5 mr-2" />
+                Previous
+              </button>
 
-        {/* Results */}
-        {showResults && (
+              <button
+                onClick={() => setCurrentPage(0)}
+                className="flex items-center px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-all"
+              >
+                <Home className="w-4 h-4 mr-1" />
+                Start
+              </button>
+
+              <button
+                onClick={goToNextPage}
+                disabled={
+                  (currentPage === 0 && !canProceedFromForm) ||
+                  (currentPage > 0 && getPageProgress() < 100)
+                }
+                className="flex items-center px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-semibold
+                hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                {currentPage === totalPages - 1 ? (
+                  <>
+                    <CheckCircle className="w-5 h-5 mr-2" />
+                    See Results
+                  </>
+                ) : (
+                  <>
+                    Next
+                    <ChevronRight className="w-5 h-5 ml-2" />
+                  </>
+                )}
+              </button>
+            </div>
+          </>
+        ) : (
+          // Results Page
           <div className="bg-white rounded-xl shadow-lg p-8">
             <h2 className="text-3xl font-bold text-center text-gray-800 mb-8">
-              ✅ Your Results
+              ✅ Your Temperament Results
             </h2>
             
             {(() => {
@@ -422,14 +564,31 @@ ${temperaments.melancholic.icon} Melancholic (Thinker): ${results.allPercentages
                     </div>
                   </div>
 
-                  {/* Send to WhatsApp */}
-                  <div className="text-center">
+                  {/* Actions */}
+                  <div className="flex justify-center space-x-4">
                     <button
                       onClick={sendToWhatsApp}
                       className="bg-green-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-600 transform hover:scale-105 transition-all duration-200 shadow-lg"
                     >
                       <Send className="inline-block w-5 h-5 mr-2" />
-                      Send Results to WhatsApp
+                      Send to WhatsApp
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        setShowResults(false);
+                        setCurrentPage(0);
+                        setAnswers({});
+                        setFormData({
+                          name: '',
+                          jobTitle: '',
+                          date: new Date().toISOString().split('T')[0]
+                        });
+                        setWhatsappNumber('');
+                      }}
+                      className="bg-blue-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-600 transform hover:scale-105 transition-all duration-200 shadow-lg"
+                    >
+                      Take Again
                     </button>
                   </div>
                 </div>
